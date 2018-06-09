@@ -20,7 +20,7 @@ trait ItemService extends Service {
   /**
     * Start an auction for an item.
     *
-    * @param id The id of the item to start the auction for.
+    * @param id The id of the item to start  sds iiiiithe auction for.
     * @return Done if the auction was started.
     */
   def startAuction(id: UUID): ServiceCall[NotUsed, Done]
@@ -40,7 +40,7 @@ trait ItemService extends Service {
     * @param status   The status of items to return.
     * @param pageNo   The page number, starting from zero.
     * @param pageSize The number of items to return per page.
-    * @return The sequence of items.
+    * @return The sequence of itemsdsd
     */
   def getItemsForUser(id: UUID, status: ItemStatus.Status, pageNo: Option[Int], pageSize: Option[Int]): ServiceCall[NotUsed, PaginatedSequence[ItemSummary]]
 
@@ -55,7 +55,7 @@ trait ItemService extends Service {
     named("item").withCalls(
       pathCall("/api/item", createItem),
       restCall(Method.POST, "/api/item/:id/start", startAuction _),
-      pathCall("/api/item/:id", getItem _),
+      restCall(Method.GET, "/api/item/:id", getItem _),
       pathCall("/api/item?userId&status&pageNo&pageSize", getItemsForUser _)
     ).withTopics(
       topic("item-ItemEvent", this.itemEvents)

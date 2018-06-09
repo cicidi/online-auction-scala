@@ -5,6 +5,7 @@ import java.util.UUID
 import akka.NotUsed
 import com.example.auction.security.SecurityHeaderFilter
 import com.lightbend.lagom.scaladsl.api.broker.Topic
+import com.lightbend.lagom.scaladsl.api.transport.Method
 import com.lightbend.lagom.scaladsl.api.{Service, ServiceCall}
 
 /**
@@ -36,14 +37,20 @@ trait BiddingService extends Service {
     */
   def bidEvents: Topic[BidEvent]
 
+  def health: ServiceCall[NotUsed, String]
+
   final override def descriptor = {
     import Service._
 
     named("bidding").withCalls(
-      pathCall("/api/item/:id/bids", placeBid _),
-      pathCall("/api/item/:id/bids", getBids _)
+      //      pathCall("/api/item/:id/bids", placeBid _),
+      restCall(Method.POST, "/api/item/:itemId/bids", placeBid _),
+      pathCall("/api/item/:id/bids", getBids _),
+      pathCall("/health", health _)
     ).withTopics(
       topic("bidding-BidEvent", bidEvents)
     ).withHeaderFilter(SecurityHeaderFilter.Composed)
   }
+
+
 }

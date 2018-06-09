@@ -14,8 +14,8 @@ class BiddingServiceSubscriber(persistentEntityRegistry: PersistentEntityRegistr
   biddingService.bidEvents.subscribe.atLeastOnce(Flow[BidEvent].mapAsync(1) {
     case b @ BiddingFinished(itemId, winningBid) =>
       entityRef(itemId)
-        .ask(FinishAuction(winningBid.map(_.bidder), winningBid.map(_.price)))
-    case BidPlaced(itemId, bid) => entityRef(itemId).ask(UpdatePrice(bid.price))
+        .ask(FinishAuctionCommand(winningBid.map(_.bidder), winningBid.map(_.price)))
+    case BidPlaced(itemId, bid) => entityRef(itemId).ask(UpdatePriceCommand(bid.price))
     case other => Future.successful(Done)
   })
 

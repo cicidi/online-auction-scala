@@ -6,15 +6,15 @@ object ItemSerializerRegistry extends JsonSerializerRegistry {
   override def serializers = List(
     JsonSerializer[Item],
 
-    JsonSerializer[CreateItem],
-    JsonSerializer[StartAuction],
-    JsonSerializer[UpdatePrice],
-    JsonSerializer[FinishAuction],
-    JsonSerializer[GetItem.type],
+    JsonSerializer[CreateItemCommand],
+    JsonSerializer[StartAuctionCommand],
+    JsonSerializer[UpdatePriceCommand],
+    JsonSerializer[FinishAuctionCommand],
+    JsonSerializer[GetItemCommand.type],
 
-    JsonSerializer[ItemCreated],
-    JsonSerializer[AuctionStarted],
-    JsonSerializer[PriceUpdated],
-    JsonSerializer[AuctionFinished]
+    JsonSerializer[ItemCreatedEvent],
+    JsonSerializer[AuctionStartedEvent],
+    JsonSerializer[PriceUpdatedEvent],
+    JsonSerializer[AuctionFinishedEvent]
   )
 }

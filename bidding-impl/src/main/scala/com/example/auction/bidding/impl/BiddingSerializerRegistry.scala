@@ -9,16 +9,16 @@ object BiddingSerializerRegistry extends JsonSerializerRegistry {
     // State
     JsonSerializer[AuctionState],
     // Commands and replies
-    JsonSerializer[GetAuction.type],
-    JsonSerializer[StartAuction],
-    JsonSerializer[PlaceBid],
+    JsonSerializer[GetAuctionCommand.type],
+    JsonSerializer[StartAuctionCommand],
+    JsonSerializer[PlaceBidCommand],
     JsonSerializer[PlaceBidResult],
-    JsonSerializer[FinishBidding.type],
-    JsonSerializer[CancelAuction.type],
+    JsonSerializer[FinishBiddingCommand.type],
+    JsonSerializer[CancelAuctionCommand.type],
     // Events
-    JsonSerializer[AuctionStarted],
-    JsonSerializer[BidPlaced],
-    JsonSerializer[BiddingFinished.type],
-    JsonSerializer[AuctionCancelled.type]
+    JsonSerializer[AuctionStartedEvent],
+    JsonSerializer[BidPlacedEvent],
+    JsonSerializer[BiddingFinishedEvent.type],
+    JsonSerializer[AuctionCancelledEvent.type]
   )
 }

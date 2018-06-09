@@ -20,7 +20,7 @@ class ItemEntitySpec extends WordSpec with Matchers with BeforeAndAfterAll with 
 
   private val itemId = UUID.randomUUID
   private val creatorId = UUID.randomUUID
-  private val item = Item(itemId, creatorId, "title", "desc", "EUR", 1, 10, None, ItemStatus.Created,
+  private val item = Item(itemId, creatorId, "title", "desc", "EUR", 1, 10, None, ItemStatus.CreatedStatus,
     Duration.ofMinutes(10), None, None, None)
 
   private def withDriver[T](block: PersistentEntityTestDriver[ItemCommand, ItemEvent, Option[Item]] => T): T = {
@@ -35,73 +35,73 @@ class ItemEntitySpec extends WordSpec with Matchers with BeforeAndAfterAll with 
   "The item entity" should {
 
     "allow creating an item" in withDriver { driver =>
-      val outcome = driver.run(CreateItem(item))
-      outcome.events should contain only ItemCreated(item)
+      val outcome = driver.run(CreateItemCommand(item))
+      outcome.events should contain only ItemCreatedEvent(item)
       outcome.state should ===(Some(item))
     }
 
     "allow starting an auction" in withDriver { driver =>
-      driver.run(CreateItem(item))
-      val outcome = driver.run(StartAuction(creatorId))
+      driver.run(CreateItemCommand(item))
+      val outcome = driver.run(StartAuctionCommand(creatorId))
       val auctionStart = outcome.state.value.auctionStart.value
-      outcome.events should contain only AuctionStarted(auctionStart)
-      outcome.state.value.status should ===(ItemStatus.Auction)
+      outcome.events should contain only AuctionStartedEvent(auctionStart)
+      outcome.state.value.status should ===(ItemStatus.AuctionStatus)
     }
 
     "only allow the creator to start an auction" in withDriver { driver =>
-      driver.run(CreateItem(item))
-      val outcome = driver.run(StartAuction(UUID.randomUUID))
+      driver.run(CreateItemCommand(item))
+      val outcome = driver.run(StartAuctionCommand(UUID.randomUUID))
       outcome.events shouldBe empty
       outcome.replies should have size 1
       outcome.replies.head shouldBe a [InvalidCommandException]
     }
 
     "ignore duplicate starte auction commands" in withDriver { driver =>
-      driver.run(CreateItem(item), StartAuction(creatorId))
-      driver.run(StartAuction(creatorId)).events shouldBe empty
+      driver.run(CreateItemCommand(item), StartAuctionCommand(creatorId))
+      driver.run(StartAuctionCommand(creatorId)).events shouldBe empty
     }
 
     "allow updating the price" in withDriver { driver =>
-      driver.run(CreateItem(item), StartAuction(creatorId))
-      val outcome = driver.run(UpdatePrice(10))
-      outcome.events should contain only PriceUpdated(10)
+      driver.run(CreateItemCommand(item), StartAuctionCommand(creatorId))
+      val outcome = driver.run(UpdatePriceCommand(10))
+      outcome.events should contain only PriceUpdatedEvent(10)
       outcome.state.value.price.value should ===(10)
     }
 
     "allow finishing an auction" in withDriver { driver =>
-      driver.run(CreateItem(item), StartAuction(creatorId))
+      driver.run(CreateItemCommand(item), StartAuctionCommand(creatorId))
       val winner = UUID.randomUUID
-      val outcome = driver.run(FinishAuction(Some(winner), Some(20)))
-      outcome.events should contain only AuctionFinished(Some(winner), Some(20))
+      val outcome = driver.run(FinishAuctionCommand(Some(winner), Some(20)))
+      outcome.events should contain only AuctionFinishedEvent(Some(winner), Some(20))
       outcome.state.value.auctionWinner.value should ===(winner)
       outcome.state.value.price.value should ===(20)
-      outcome.state.value.status should ===(ItemStatus.Completed)
+      outcome.state.value.status should ===(ItemStatus.CompletedStatus)
     }
 
     "allow finishing an auction with no winner" in withDriver { driver =>
-      driver.run(CreateItem(item), StartAuction(creatorId))
-      val outcome = driver.run(FinishAuction(None, None))
-      outcome.events should contain only AuctionFinished(None, None)
+      driver.run(CreateItemCommand(item), StartAuctionCommand(creatorId))
+      val outcome = driver.run(FinishAuctionCommand(None, None))
+      outcome.events should contain only AuctionFinishedEvent(None, None)
       outcome.state.value.auctionWinner shouldBe empty
       outcome.state.value.price shouldBe empty
-      outcome.state.value.status should ===(ItemStatus.Completed)
+      outcome.state.value.status should ===(ItemStatus.CompletedStatus)
     }
 
     "ignore a request to start a completed auction" in withDriver { driver =>
-      driver.run(CreateItem(item), StartAuction(creatorId), FinishAuction(None, None))
-      val outcome = driver.run(StartAuction(creatorId))
+      driver.run(CreateItemCommand(item), StartAuctionCommand(creatorId), FinishAuctionCommand(None, None))
+      val outcome = driver.run(StartAuctionCommand(creatorId))
       outcome.events shouldBe empty
     }
 
     "allow getting an auction" in withDriver { driver =>
-      driver.run(CreateItem(item))
-      val outcome1 = driver.run(GetItem)
+      driver.run(CreateItemCommand(item))
+      val outcome1 = driver.run(GetItemCommand)
       outcome1.replies should contain only Some(item)
-      driver.run(StartAuction(creatorId))
-      val outcome2 = driver.run(GetItem)
+      driver.run(StartAuctionCommand(creatorId))
+      val outcome2 = driver.run(GetItemCommand)
       outcome2.replies should contain only outcome2.state
-      driver.run(FinishAuction(None, None))
-      val outcome3 = driver.run(GetItem)
+      driver.run(FinishAuctionCommand(None, None))
+      val outcome3 = driver.run(GetItemCommand)
       outcome3.replies should contain only outcome3.state
     }
   }

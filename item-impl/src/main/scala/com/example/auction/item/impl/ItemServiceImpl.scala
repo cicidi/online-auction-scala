@@ -25,18 +25,18 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
     }
     val itemId = UUIDs.timeBased()
     val pItem = Item(itemId, item.creator, item.title, item.description, item.currencyId, item.increment,
-      item.reservePrice, None, ItemStatus.Created, item.auctionDuration, None, None, None)
-    entityRef(itemId).ask(CreateItem(pItem)).map { _ =>
+      item.reservePrice, None, ItemStatus.CreatedStatus, item.auctionDuration, None, None, None)
+    entityRef(itemId).ask(CreateItemCommand(pItem)).map { _ =>
       convertItem(pItem)
     }
   })
 
   override def startAuction(id: UUID) = authenticated(userId => ServerServiceCall { _ =>
-    entityRef(id).ask(StartAuction(userId))
+    entityRef(id).ask(StartAuctionCommand(userId))
   })
 
   override def getItem(id: UUID) = ServerServiceCall { _ =>
-    entityRef(id).ask(GetItem).map {
+    entityRef(id).ask(GetItemCommand).map {
       case Some(item) => convertItem(item)
       case None => throw NotFound("Item " + id + " not found");
     }
@@ -50,7 +50,7 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
     registry.eventStream(tag, offset)
       .filter {
         _.event match {
-          case x@(_: ItemCreated | _: AuctionStarted | _: AuctionFinished) => true
+          case x@(_: ItemCreatedEvent | _: AuctionStartedEvent | _: AuctionFinishedEvent) => true
           case _ => false
         }
       }.mapAsync(1)(convertEvent)
@@ -64,18 +64,18 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
 
   private def convertStatus(status: ItemStatus.Status): api.ItemStatus.Status = {
     status match {
-      case ItemStatus.Created => api.ItemStatus.Created
-      case ItemStatus.Auction => api.ItemStatus.Auction
-      case ItemStatus.Completed => api.ItemStatus.Completed
-      case ItemStatus.Cancelled => api.ItemStatus.Cancelled
+      case ItemStatus.CreatedStatus => api.ItemStatus.Created
+      case ItemStatus.AuctionStatus => api.ItemStatus.Auction
+      case ItemStatus.CompletedStatus => api.ItemStatus.Completed
+      case ItemStatus.CancelledStatus => api.ItemStatus.Cancelled
     }
   }
 
 
   private def convertEvent(eventStreamElement: EventStreamElement[ItemEvent]): Future[(api.ItemEvent, Offset)] = {
     eventStreamElement match {
-      case EventStreamElement(itemId, AuctionStarted(_), offset) =>
-        entityRefString(itemId).ask(GetItem).map {
+      case EventStreamElement(itemId, AuctionStartedEvent(_), offset) =>
+        entityRefString(itemId).ask(GetItemCommand).map {
           case Some(item) =>
             (api.AuctionStarted(
               itemId = item.id,
@@ -86,15 +86,15 @@ class ItemServiceImpl(registry: PersistentEntityRegistry, itemRepository: ItemRe
               endDate = item.auctionEnd.get
             ), offset)
         }
-      case EventStreamElement(itemId, AuctionFinished(winner, price), offset) =>
-        entityRefString(itemId).ask(GetItem).map {
+      case EventStreamElement(itemId, AuctionFinishedEvent(winner, price), offset) =>
+        entityRefString(itemId).ask(GetItemCommand).map {
           case Some(item) =>
             (api.AuctionFinished(
               itemId = item.id,
               item = convertItem(item)
             ), offset)
         }
-      case EventStreamElement(itemId, ItemCreated(item), offset) =>
+      case EventStreamElement(itemId, ItemCreatedEvent(item), offset) =>
         Future.successful {
           (api.ItemUpdated(
             itemId = item.id,

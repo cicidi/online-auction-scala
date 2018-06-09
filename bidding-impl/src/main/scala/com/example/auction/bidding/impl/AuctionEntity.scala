@@ -38,7 +38,7 @@ class AuctionEntity extends PersistentEntity {
     case (AuctionCancelledEvent, auctionState) => auctionState.withStatus(Cancelled)
   }
 
-  private def getAuctionAction = Actions().onReadOnlyCommand[GetAuctionCommand.type, AuctionState] {
+  private def getAuction = Actions().onReadOnlyCommand[GetAuctionCommand.type, AuctionState] {
     case (GetAuctionCommand, ctx, auctionState) => ctx.reply(auctionState)
   }
 
@@ -46,10 +46,10 @@ class AuctionEntity extends PersistentEntity {
     * Behavior for the not started state.
     */
   private val notStarted = {
-    getAuctionAction orElse {
+    getAuction orElse {
 
-      Actions().onCommand[StartAuction, Done] {
-        case (StartAuction(auction), ctx, _) =>
+      Actions().onCommand[StartAuctionCommand, Done] {
+        case (StartAuctionCommand(auction), ctx, _) =>
           ctx.thenPersist(AuctionStartedEvent(auction))(_ => ctx.reply(Done))
       }.onReadOnlyCommand[PlaceBidCommand, PlaceBidResult] {
         case (PlaceBidCommand(_, _), ctx, auctionState) =>
@@ -66,10 +66,10 @@ class AuctionEntity extends PersistentEntity {
     * Behavior for the under auction state.
     */
   private val underAuction = {
-    getAuctionAction orElse {
+    getAuction orElse {
 
-      Actions().onReadOnlyCommand[StartAuction, Done] {
-        case (StartAuction(_), ctx, _) =>
+      Actions().onReadOnlyCommand[StartAuctionCommand, Done] {
+        case (StartAuctionCommand(_), ctx, _) =>
           ctx.reply(Done)
       }.onCommand[PlaceBidCommand, PlaceBidResult] {
         case (placeBid: PlaceBidCommand, ctx, auctionState) =>
@@ -89,10 +89,10 @@ class AuctionEntity extends PersistentEntity {
     * Behavior for the completed state.
     */
   private val complete = {
-    getAuctionAction orElse {
+    getAuction orElse {
 
-      Actions().onReadOnlyCommand[StartAuction, Done] {
-        case (StartAuction(_), ctx, _) =>
+      Actions().onReadOnlyCommand[StartAuctionCommand, Done] {
+        case (StartAuctionCommand(_), ctx, _) =>
           ctx.reply(Done)
       }.onReadOnlyCommand[FinishBiddingCommand.type, Done] {
         case (FinishBiddingCommand, ctx, _) =>
@@ -109,10 +109,10 @@ class AuctionEntity extends PersistentEntity {
     * Behavior for the cancelled state.
     */
   private val cancelled = {
-    getAuctionAction orElse {
+    getAuction orElse {
 
-      Actions().onReadOnlyCommand[StartAuction, Done] {
-        case (StartAuction(_), ctx, _) =>
+      Actions().onReadOnlyCommand[StartAuctionCommand, Done] {
+        case (StartAuctionCommand(_), ctx, _) =>
           ctx.reply(Done)
       }.onReadOnlyCommand[FinishBiddingCommand.type, Done] {
         case (FinishBiddingCommand, ctx, _) =>
@@ -130,50 +130,57 @@ class AuctionEntity extends PersistentEntity {
   /**
     * The main logic for handling of bids.
     */
-  private def handlePlaceBidWhileUnderAuction(bid: PlaceBidCommand, ctx: CommandContext[PlaceBidResult], auctionState: AuctionState): Persist = {
+  private def handlePlaceBidWhileUnderAuction(placeBidCommand: PlaceBidCommand, ctx: CommandContext[PlaceBidResult], auctionState: AuctionState): Persist = {
     val AuctionState(Some(auction), _, history) = auctionState
     val now = Instant.now
     // Even though we're not in the finished state yet, we should check
-    if (auction.endTime.isBefore(now)) {
+    if (auctionState.auction.get.endTime.isBefore(now)) {
       reply(ctx, createResult(PlaceBidStatus.Finished, auctionState))
-    } else if (auction.creator == bid.bidder) {
+    } else if (auction.creator == placeBidCommand.bidder) {
       throw BidValidationException("An auctions creator cannot bid in their own auction.")
-    }  else {
+    } else {
 
 
       history.headOption match {
 
-        case Some(Bid(currentBidder, _, currentPrice, _)) if bid.bidPrice >= currentPrice && bid.bidder == currentBidder
-          && bid.bidPrice >= auction.reservePrice =>
+        case Some(Bid(currentBidder, _, currentPrice, _))
+          if placeBidCommand.bidPrice >= currentPrice && placeBidCommand.bidder == currentBidder
+            && placeBidCommand.bidPrice >= auction.reservePrice =>
           // Allow the current bidder to update their bid
-          ctx.thenPersist(BidPlacedEvent(Bid(bid.bidder, now, currentPrice, bid.bidPrice))) { _ =>
-            ctx.reply(PlaceBidResult(PlaceBidStatus.Accepted, currentPrice, Some(bid.bidder)))
+          ctx.thenPersist(BidPlacedEvent(Bid(placeBidCommand.bidder, now, currentPrice, placeBidCommand.bidPrice))) { _ =>
+            ctx.reply(PlaceBidResult(PlaceBidStatus.Accepted, currentPrice, Some(placeBidCommand.bidder)))
           }
 
-        case None if bid.bidPrice < auction.increment =>
+        case None
+          if placeBidCommand.bidPrice < auction.increment =>
           reply(ctx, createResult(PlaceBidStatus.TooLow, auctionState))
-        case Some(Bid(_, _, currentPrice, _)) if bid.bidPrice < currentPrice + auction.increment =>
+        case Some(currentBid@Bid(_, _, currentPrice, _))
+          if placeBidCommand.bidPrice < currentPrice + auction.increment =>
+          (println(currentBid))
           reply(ctx, createResult(PlaceBidStatus.TooLow, auctionState))
 
-        case Some(currentBid @ Bid(_, _, _, currentMaximum)) if bid.bidPrice <= currentMaximum =>
-          handleAutomaticOutbid(bid, ctx, auction, now, currentBid)
+        case Some(currentBid)
+          if placeBidCommand.bidPrice <= currentBid.maximumBid =>
+          (println(currentBid))
+          handleAutomaticOutbid(placeBidCommand, ctx, auction, now, currentBid)
 
-        case _ if bid.bidPrice < auction.reservePrice =>
-          ctx.thenPersist(BidPlacedEvent(Bid(bid.bidder, now, bid.bidPrice, bid.bidPrice))) { _ =>
-            ctx.reply(PlaceBidResult(PlaceBidStatus.AcceptedBelowReserve, bid.bidPrice, Some(bid.bidder)))
+        case _
+          if placeBidCommand.bidPrice < auction.reservePrice =>
+          ctx.thenPersist(BidPlacedEvent(Bid(placeBidCommand.bidder, now, placeBidCommand.bidPrice, placeBidCommand.bidPrice))) { _ =>
+            ctx.reply(PlaceBidResult(PlaceBidStatus.AcceptedBelowReserve, placeBidCommand.bidPrice, Some(placeBidCommand.bidder)))
           }
 
         case Some(Bid(_, _, _, currentMaximum)) =>
-          val nextIncrement = Math.min(currentMaximum + auction.increment, bid.bidPrice)
-          ctx.thenPersist(BidPlacedEvent(Bid(bid.bidder, now, nextIncrement, bid.bidPrice))) { _ =>
-            ctx.reply(PlaceBidResult(PlaceBidStatus.Accepted, nextIncrement, Some(bid.bidder)))
+          val nextIncrement = Math.min(currentMaximum + auction.increment, placeBidCommand.bidPrice)
+          ctx.thenPersist(BidPlacedEvent(Bid(placeBidCommand.bidder, now, nextIncrement, placeBidCommand.bidPrice))) { _ =>
+            ctx.reply(PlaceBidResult(PlaceBidStatus.Accepted, nextIncrement, Some(placeBidCommand.bidder)))
           }
 
         case None =>
           // Ensure that the bid is both at least the reserve, and at least the increment
           val firstBid = Math.max(auction.reservePrice, auction.increment)
-          ctx.thenPersist(BidPlacedEvent(Bid(bid.bidder, now, firstBid, bid.bidPrice))) { _ =>
-            ctx.reply(PlaceBidResult(PlaceBidStatus.Accepted, firstBid, Some(bid.bidder)))
+          ctx.thenPersist(BidPlacedEvent(Bid(placeBidCommand.bidder, now, firstBid, placeBidCommand.bidPrice))) { _ =>
+            ctx.reply(PlaceBidResult(PlaceBidStatus.Accepted, firstBid, Some(placeBidCommand.bidder)))
           }
       }
     }
@@ -216,12 +223,12 @@ class AuctionEntity extends PersistentEntity {
 /**
   * An auction.
   *
-  * @param itemId The item under auction.
-  * @param creator The user that created the item.
+  * @param itemId       The item under auction.
+  * @param creator      The user that created the item.
   * @param reservePrice The reserve price of the auction.
-  * @param increment The minimum increment between bids.
-  * @param startTime The time the auction started.
-  * @param endTime The time the auction will end.
+  * @param increment    The minimum increment between bids.
+  * @param startTime    The time the auction started.
+  * @param endTime      The time the auction will end.
   */
 case class Auction(itemId: UUID, creator: UUID, reservePrice: Int, increment: Int, startTime: Instant, endTime: Instant)
 
@@ -232,9 +239,9 @@ object Auction {
 /**
   * A bid.
   *
-  * @param bidder The bidder.
-  * @param bidTime The time the bid was placed.
-  * @param bidPrice The bid price.
+  * @param bidder     The bidder.
+  * @param bidTime    The time the bid was placed.
+  * @param bidPrice   The bid price.
   * @param maximumBid The maximum the bidder is willing to bid.
   */
 case class Bid(bidder: UUID, bidTime: Instant, bidPrice: Int, maximumBid: Int)
@@ -247,7 +254,8 @@ object Bid {
   * The auction state.
   */
 case class AuctionState(auction: Option[Auction], status: AuctionStatus.Status, biddingHistory: Seq[Bid]) {
-  def withStatus (status: AuctionStatus.Status) = copy(status = status)
+  def withStatus(status: AuctionStatus.Status) = copy(status = status)
+
   def bid(bid: Bid) = if (biddingHistory.headOption.exists(_.bidder == bid.bidder)) {
     copy(biddingHistory = bid +: biddingHistory.tail)
   } else {
@@ -258,6 +266,7 @@ case class AuctionState(auction: Option[Auction], status: AuctionStatus.Status, 
 object AuctionState {
   implicit val format: Format[AuctionState] = Json.format
   val notStarted = AuctionState(None, AuctionStatus.NotStarted, Nil)
+
   def start(auction: Auction): AuctionState = AuctionState(Some(auction), AuctionStatus.UnderAuction, Nil)
 }
 
@@ -279,10 +288,10 @@ trait AuctionCommand
 /**
   * Start the auction.
   */
-case class StartAuction(auction: Auction) extends AuctionCommand with ReplyType[Done]
+case class StartAuctionCommand(auction: Auction) extends AuctionCommand with ReplyType[Done]
 
-object StartAuction {
-  implicit val format: Format[StartAuction] = Json.format
+object StartAuctionCommand {
+  implicit val format: Format[StartAuctionCommand] = Json.format
 }
 
 /**
@@ -309,26 +318,32 @@ object PlaceBidStatus extends Enumeration {
     * The bid was accepted, and is the current highest bid.
     */
   val Accepted,
+
   /**
     * The bid was accepted, but was outbidded by the maximum bid of the current highest bidder.
     */
   AcceptedOutbid,
+
   /**
     * The bid was accepted, but is below the reserve.
     */
   AcceptedBelowReserve,
+
   /**
     * The bid was not at least the current bid plus the increment.
     */
   TooLow,
+
   /**
     * The auction hasn't started.
     */
   NotStarted,
+
   /**
     * The auction has already finished.
     */
   Finished,
+
   /**
     * The auction has been cancelled.
     */

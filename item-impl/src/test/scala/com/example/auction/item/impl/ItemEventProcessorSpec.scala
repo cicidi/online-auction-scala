@@ -32,7 +32,7 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
   private val offset = new AtomicInteger()
 
   private def sampleItem(creatorId: UUID) = {
-    Item(UUIDs.timeBased, creatorId, "title", "desc", "USD", 10, 100, None, ItemStatus.Created,
+    Item(UUIDs.timeBased, creatorId, "title", "desc", "USD", 10, 100, None, ItemStatus.CreatedStatus,
       Duration.ofMinutes(10), None, None, None)
   }
 
@@ -41,7 +41,7 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
       val creatorId = UUID.randomUUID
       val item = sampleItem(creatorId)
       for {
-        _ <- feed(item.id, ItemCreated(item))
+        _ <- feed(item.id, ItemCreatedEvent(item))
         items <- getItems(creatorId, api.ItemStatus.Created)
       } yield {
         items.items should contain only
@@ -53,8 +53,8 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
       val creatorId = UUID.randomUUID
       val item = sampleItem(creatorId)
       for {
-        _ <- feed(item.id, ItemCreated(item))
-        _ <- feed(item.id, AuctionStarted(Instant.now))
+        _ <- feed(item.id, ItemCreatedEvent(item))
+        _ <- feed(item.id, AuctionStartedEvent(Instant.now))
         created <- getItems(creatorId, api.ItemStatus.Created)
         auction <- getItems(creatorId, api.ItemStatus.Auction)
       } yield {
@@ -68,9 +68,9 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
       val creatorId = UUID.randomUUID
       val item = sampleItem(creatorId)
       for {
-        _ <- feed(item.id, ItemCreated(item))
-        _ <- feed(item.id, AuctionStarted(Instant.now))
-        _ <- feed(item.id, PriceUpdated(23))
+        _ <- feed(item.id, ItemCreatedEvent(item))
+        _ <- feed(item.id, AuctionStartedEvent(Instant.now))
+        _ <- feed(item.id, PriceUpdatedEvent(23))
         auction <- getItems(creatorId, api.ItemStatus.Auction)
       } yield {
         auction.items should contain only
@@ -83,9 +83,9 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
       val winnerId = UUID.randomUUID()
       val item = sampleItem(creatorId)
       for {
-        _ <- feed(item.id, ItemCreated(item))
-        _ <- feed(item.id, AuctionStarted(Instant.now))
-        _ <- feed(item.id, AuctionFinished(Some(winnerId), Some(23)))
+        _ <- feed(item.id, ItemCreatedEvent(item))
+        _ <- feed(item.id, AuctionStartedEvent(Instant.now))
+        _ <- feed(item.id, AuctionFinishedEvent(Some(winnerId), Some(23)))
         auction <- getItems(creatorId, api.ItemStatus.Auction)
         completed <- getItems(creatorId, api.ItemStatus.Completed)
       } yield {
@@ -100,7 +100,7 @@ class ItemEventProcessorSpec extends AsyncWordSpec with BeforeAndAfterAll with M
       for {
         _ <- Future.sequence(for (i <- 1 to 35) yield {
           val item = sampleItem(creatorId).copy(title = s"title$i")
-          feed(item.id, ItemCreated(item))
+          feed(item.id, ItemCreatedEvent(item))
         })
         items <- itemRepository.getItemsForUser(creatorId, api.ItemStatus.Created, 2, 10)
       } yield {

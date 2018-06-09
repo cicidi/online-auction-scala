@@ -2,9 +2,11 @@ package com.example.auction.bidding.impl
 
 import java.util.UUID
 
+import akka.NotUsed
 import com.example.auction.bidding.api
 import com.example.auction.bidding.api.BiddingService
 import com.example.auction.security.ServerSecurity._
+import com.lightbend.lagom.scaladsl.api.ServiceCall
 import com.lightbend.lagom.scaladsl.broker.TopicProducer
 import com.lightbend.lagom.scaladsl.persistence.PersistentEntityRegistry
 import com.lightbend.lagom.scaladsl.server.ServerServiceCall
@@ -15,7 +17,7 @@ import scala.concurrent.{ExecutionContext, Future}
 class BiddingServiceImpl(persistentEntityRegistry: PersistentEntityRegistry)(implicit ec: ExecutionContext) extends BiddingService {
 
   override def placeBid(itemId: UUID) = authenticated(userId => ServerServiceCall { bid =>
-    entityRef(itemId).ask(PlaceBid(bid.maximumBidPrice, userId))
+    entityRef(itemId).ask(PlaceBidCommand(bid.maximumBidPrice, userId))
       .map { result =>
         val status = result.status match {
           case PlaceBidStatus.Accepted => api.BidResultStatus.Accepted
@@ -32,21 +34,24 @@ class BiddingServiceImpl(persistentEntityRegistry: PersistentEntityRegistry)(imp
   })
 
   override def getBids(itemId: UUID) = ServerServiceCall { _ =>
-    entityRef(itemId).ask(GetAuction).map { auction =>
+    entityRef(itemId).ask(GetAuctionCommand).map { auction =>
       auction.biddingHistory.map(convertBid).reverse
     }
   }
 
+  override def health: ServiceCall[NotUsed, String] = ServiceCall { request =>
+    Future.successful("OK")
+  }
   override def bidEvents = TopicProducer.taggedStreamWithOffset(AuctionEvent.Tag.allTags.to[immutable.Seq]) { (tag, offset) =>
     persistentEntityRegistry.eventStream(tag, offset).filter(e =>
-      e.event.isInstanceOf[BidPlaced] || e.event.isInstanceOf[BiddingFinished.type]
+      e.event.isInstanceOf[BidPlacedEvent] || e.event.isInstanceOf[BiddingFinishedEvent.type]
     ).mapAsync(1) { event =>
       event.event match {
-        case BidPlaced(bid) =>
+        case BidPlacedEvent(bid) =>
           val message = api.BidPlaced(UUID.fromString(event.entityId), convertBid(bid))
           Future.successful((message, event.offset))
-        case BiddingFinished =>
-          persistentEntityRegistry.refFor[AuctionEntity](event.entityId).ask(GetAuction).map { auction =>
+        case BiddingFinishedEvent =>
+          persistentEntityRegistry.refFor[AuctionEntity](event.entityId).ask(GetAuctionCommand).map { auction =>
 
             val message = api.BiddingFinished(UUID.fromString(event.entityId),
               auction.biddingHistory.headOption

@@ -28,9 +28,9 @@ class AuctionSchedulerProcessor(readSide: CassandraReadSide, session: CassandraS
       .setGlobalPrepare(createTable)
       .setPrepare { tag =>
         prepareStatements()
-      }.setEventHandler[AuctionStarted](insertAuction)
-      .setEventHandler[BiddingFinished.type](deleteAuction)
-      .setEventHandler[AuctionCancelled.type](deleteAuction)
+      }.setEventHandler[AuctionStartedEvent](insertAuction)
+      .setEventHandler[BiddingFinishedEvent.type](deleteAuction)
+      .setEventHandler[AuctionCancelledEvent.type](deleteAuction)
       .build()
   }
 
@@ -61,7 +61,7 @@ class AuctionSchedulerProcessor(readSide: CassandraReadSide, session: CassandraS
     }
   }
 
-  private def insertAuction(started: EventStreamElement[AuctionStarted]) = {
+  private def insertAuction(started: EventStreamElement[AuctionStartedEvent]) = {
     Future.successful(
       List(insertAuctionStatement.bind(UUID.fromString(started.entityId), Date.from(started.event.auction.endTime)))
     )
@@ -90,7 +90,7 @@ class AuctionScheduler(session: CassandraSession, system: ActorSystem, registry:
     session.select("SELECT itemId FROM auctionSchedule WHERE endAuction < toTimestamp(now()) allow filtering").runForeach { row =>
       val uuid = row.getUUID("itemId")
       registry.refFor[AuctionEntity](uuid.toString)
-        .ask(FinishBidding)
+        .ask(FinishBiddingCommand)
     }.recover {
       case e =>
         log.warn("Error running finish bidding query", e)

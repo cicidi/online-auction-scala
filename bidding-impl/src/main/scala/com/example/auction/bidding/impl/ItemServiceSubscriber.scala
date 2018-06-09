@@ -14,19 +14,20 @@ class ItemServiceSubscriber(persistentEntityRegistry: PersistentEntityRegistry, 
 
   itemService.itemEvents.subscribe.atLeastOnce(Flow[ItemEvent].mapAsync(1) {
 
-    case as: api.AuctionStarted =>
+    case auctionStarted: api.AuctionStarted =>
       val auction = Auction(
-        itemId = as.itemId,
-        creator = as.creator,
-        reservePrice = as.reservePrice,
-        increment = as.increment,
-        startTime = as.startDate,
-        endTime = as.endDate
+        itemId = auctionStarted.itemId,
+        creator = auctionStarted.creator,
+        reservePrice = auctionStarted.reservePrice,
+        increment = auctionStarted.increment,
+        startTime = auctionStarted.startDate,
+        endTime = auctionStarted.endDate
       )
-      entityRef(as.itemId).ask(StartAuction(auction));
+      println(auction);
+      entityRef(auctionStarted.itemId).ask(StartAuctionCommand(auction));
 
     case api.AuctionCancelled(itemId) =>
-      entityRef(itemId).ask(CancelAuction)
+      entityRef(itemId).ask(CancelAuctionCommand)
 
     case other =>
       Future.successful(Done)
